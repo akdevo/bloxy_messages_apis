@@ -12,7 +12,7 @@ app.use(express.json());
 const ROBLOX_CLIENT_ID = '4458072035176138313'; // Replace with your Roblox application client ID
 const ROBLOX_CLIENT_SECRET = 'RBX-UugkXNUFAECL-nuF5UkE7wtzWA3Blm0r9vNZml0CPU9BcTiXfeh5nlPpY5_F-aRy'; // Replace with your Roblox application client secret
 const ROBLOX_REDIRECT_URI = 'https://bloxy-messages-apis.onrender.com/callback'; // Replace with your callback URL
-const SCOPE = 'identify'; // The scope you need (this requests basic user info)
+const SCOPE = 'identify profile'; // The scope you need (this requests basic user info)
 
 // Step 1: Redirect users to Roblox login page
 app.get('/auth', (req, res) => {
