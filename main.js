@@ -1,7 +1,7 @@
 const express = require('express');
+const axios = require('axios');
 const http = require('http');
 const socketIo = require('socket.io');
-const axios = require('axios');
 
 const app = express();
 const server = http.createServer(app);
@@ -9,69 +9,61 @@ const io = socketIo(server);
 
 app.use(express.json());
 
-// User registration & authentication via Roblox
-app.post('/auth', async (req, res) => {
-    const { robloxId, accessToken } = req.body;
-    if (!robloxId || !accessToken) {
-        return res.status(400).json({ error: 'Roblox ID and Access Token are required' });
+const ROBLOX_CLIENT_ID = '4458072035176138313'; // Replace with your Roblox application client ID
+const ROBLOX_CLIENT_SECRET = 'RBX-UugkXNUFAECL-nuF5UkE7wtzWA3Blm0r9vNZml0CPU9BcTiXfeh5nlPpY5_F-aRy'; // Replace with your Roblox application client secret
+const ROBLOX_REDIRECT_URI = 'https://bloxy-messages-apis.onrender.com/callback'; // Replace with your callback URL
+const SCOPE = 'identify'; // The scope you need (this requests basic user info)
+
+// Step 1: Redirect users to Roblox login page
+app.get('/auth', (req, res) => {
+    const robloxLoginUrl = `https://roblox.com/oauth/authorize?client_id=${ROBLOX_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(ROBLOX_REDIRECT_URI)}&scope=${SCOPE}`;
+    res.redirect(robloxLoginUrl);
+});
+
+// Step 2: Handle callback and exchange code for access token
+app.get('/callback', async (req, res) => {
+    const { code } = req.query;
+    if (!code) {
+        return res.status(400).send('Code not provided');
     }
-    
+
     try {
-        const response = await axios.get(`https://users.roblox.com/v1/users/${robloxId}`, {
+        // Exchange authorization code for an access token
+        const tokenResponse = await axios.post('https://apis.roblox.com/oauth/token', null, {
+            params: {
+                code: code,
+                client_id: ROBLOX_CLIENT_ID,
+                client_secret: ROBLOX_CLIENT_SECRET,
+                redirect_uri: ROBLOX_REDIRECT_URI,
+                grant_type: 'authorization_code'
+            }
+        });
+
+        const accessToken = tokenResponse.data.access_token;
+
+        // Use the access token to get user info
+        const userResponse = await axios.get('https://users.roblox.com/v1/users/@me', {
             headers: {
                 Authorization: `Bearer ${accessToken}`
             }
         });
-        
-        if (response.data) {
-            return res.json({ success: true, user: response.data });
-        }
+
+        const user = userResponse.data;
+
+        // Return the user data
+        res.json({ success: true, user });
     } catch (error) {
-        return res.status(400).json({ error: 'Invalid Roblox ID or Access Token' });
+        console.error(error);
+        res.status(500).send('Authentication failed');
     }
 });
 
-
-// Fetch friends list
-app.get('/friends/:robloxId', async (req, res) => {
-    const { robloxId } = req.params;
-    
-    try {
-        const response = await axios.get(`https://friends.roblox.com/v1/users/${robloxId}/friends`);
-        return res.json(response.data);
-    } catch (error) {
-        return res.status(400).json({ error: 'Failed to fetch friends list' });
-    }
-});
-
-// Real-time messaging
+// Real-time messaging (Socket.io)
 io.on('connection', (socket) => {
     console.log('A user connected');
     
-    // This will be your in-memory user mapping (for example, a user map)
-    let currentUser;
-
-    socket.on('login', (user) => {
-        currentUser = user; // Store user data temporarily (you could persist this in a DB)
-    });
-
-    socket.on('sendMessage', async (data) => {
-        if (currentUser) {
-            // Check if the sender and receiver are friends
-            try {
-                const friendsResponse = await axios.get(`https://friends.roblox.com/v1/users/${currentUser.robloxId}/friends`);
-                const friendsList = friendsResponse.data.data;
-                const isFriend = friendsList.some(friend => friend.id === data.receiverRobloxId);
-
-                if (isFriend) {
-                    io.emit('receiveMessage', data); // Broadcast message to the receiver
-                } else {
-                    socket.emit('errorMessage', { message: 'You can only send messages to your friends.' });
-                }
-            } catch (error) {
-                socket.emit('errorMessage', { message: 'Could not fetch friends list.' });
-            }
-        }
+    socket.on('sendMessage', (data) => {
+        io.emit('receiveMessage', data); // Broadcast message to all users
     });
 
     socket.on('disconnect', () => {
@@ -79,7 +71,7 @@ io.on('connection', (socket) => {
     });
 });
 
-
+// Start server
 server.listen(3000, () => {
     console.log('Server running on port 3000');
 });
